@@ -1,0 +1,591 @@
+{
+  "networks": {
+    "default": {
+      "name": "apm-integration-testing"
+    }
+  },
+  "services": {
+    "apm-server-proxy": {
+      "build": {
+        "context": "docker/apm-server-proxy",
+        "dockerfile": "Dockerfile"
+      },
+      "volumes": [
+        "./docker/apm-server-proxy/shared-volume:/usr/app/shared-volume"
+      ],
+      "command": "npm start",
+      "ports": ["127.0.0.1:8200:8200"],
+      "environment": [
+        "ELASTIC_APM_SERVER_HOST=apm-server-proxy",
+        "ELASTIC_APM_SERVER_PORT=8200"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 36,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://apm-server-proxy:8200/"
+        ]
+      }
+    },
+    "elasticsearch": {
+      "container_name": "localtesting_8.0.0_elasticsearch",
+      "environment": [
+        "bootstrap.memory_lock=true",
+        "cluster.name=docker-cluster",
+        "cluster.routing.allocation.disk.threshold_enabled=false",
+        "discovery.type=single-node",
+        "path.repo=/usr/share/elasticsearch/data/backups",
+        "ES_JAVA_OPTS=-XX:UseAVX=2 -Xms1g -Xmx1g",
+        "path.data=/usr/share/elasticsearch/data/8.0.0",
+        "xpack.security.enabled=false",
+        "xpack.license.self_generated.type=trial",
+        "xpack.monitoring.collection.enabled=true"
+      ],
+      "healthcheck": {
+        "interval": "20",
+        "retries": 10,
+        "test": [
+          "CMD-SHELL",
+          "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"
+        ]
+      },
+      "image": "docker.elastic.co/elasticsearch/elasticsearch:8.0.0-SNAPSHOT",
+      "labels": ["co.elastic.apm.stack-version=8.0.0"],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:9200:9200"],
+      "ulimits": {
+        "memlock": {
+          "hard": -1,
+          "soft": -1
+        }
+      },
+      "volumes": ["esdata:/usr/share/elasticsearch/data"]
+    },
+    "kibana": {
+      "container_name": "localtesting_8.0.0_kibana",
+      "depends_on": {
+        "elasticsearch": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "ELASTICSEARCH_URL": "http://elasticsearch:9200",
+        "SERVER_NAME": "kibana.example.org",
+        "XPACK_MONITORING_ENABLED": "true",
+        "XPACK_XPACK_MAIN_TELEMETRY_ENABLED": "false"
+      },
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 20,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://kibana:5601/api/status"
+        ]
+      },
+      "image": "docker.elastic.co/kibana/kibana:8.0.0-SNAPSHOT",
+      "labels": ["co.elastic.apm.stack-version=8.0.0"],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:5601:5601"]
+    },
+    "opbeans-dotnet": {
+      "build": {
+        "args": [
+          "DOTNET_AGENT_BRANCH=master",
+          "DOTNET_AGENT_REPO=elastic/apm-agent-dotnet",
+          "DOTNET_AGENT_VERSION=",
+          "OPBEANS_DOTNET_BRANCH=master",
+          "OPBEANS_DOTNET_REPO=elastic/opbeans-dotnet"
+        ],
+        "context": "docker/opbeans/dotnet",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_8.0.0_opbeans-dotnet",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "elasticsearch": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "ELASTIC_APM_SERVICE_NAME=opbeans-dotnet",
+        "ELASTIC_APM_SERVER_URLS=http://apm-server-proxy:8200",
+        "ELASTIC_APM_JS_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_FLUSH_INTERVAL=5",
+        "ELASTIC_APM_TRANSACTION_MAX_SPANS=50",
+        "ELASTIC_APM_SAMPLE_RATE=1",
+        "ELASTICSEARCH_URL=http://elasticsearch:9200",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 36,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://opbeans-dotnet:80/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:3004:80"]
+    },
+    "opbeans-go": {
+      "build": {
+        "args": [
+          "GO_AGENT_BRANCH=master",
+          "GO_AGENT_REPO=elastic/apm-agent-go",
+          "OPBEANS_GO_BRANCH=master",
+          "OPBEANS_GO_REPO=elastic/opbeans-go"
+        ],
+        "context": "docker/opbeans/go",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_8.0.0_opbeans-go",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "elasticsearch": {
+          "condition": "service_healthy"
+        },
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "ELASTIC_APM_SERVICE_NAME=opbeans-go",
+        "ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_JS_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_FLUSH_INTERVAL=5",
+        "ELASTIC_APM_TRANSACTION_MAX_SPANS=50",
+        "ELASTIC_APM_SAMPLE_RATE=1",
+        "ELASTICSEARCH_URL=http://elasticsearch:9200",
+        "OPBEANS_CACHE=redis://redis:6379",
+        "OPBEANS_PORT=3000",
+        "PGHOST=postgres",
+        "PGPORT=5432",
+        "PGUSER=postgres",
+        "PGPASSWORD=verysecure",
+        "PGSSLMODE=disable",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:3003:3000"]
+    },
+    "opbeans-java": {
+      "build": {
+        "args": [
+          "JAVA_AGENT_BRANCH=",
+          "JAVA_AGENT_REPO=elastic/apm-agent-java",
+          "OPBEANS_JAVA_IMAGE=opbeans/opbeans-java",
+          "OPBEANS_JAVA_VERSION=latest"
+        ],
+        "context": "docker/opbeans/java",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_latest_opbeans-java",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "elasticsearch": {
+          "condition": "service_healthy"
+        },
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "ELASTIC_APM_SERVICE_NAME=opbeans-java",
+        "ELASTIC_APM_APPLICATION_PACKAGES=co.elastic.apm.opbeans",
+        "ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_FLUSH_INTERVAL=5",
+        "ELASTIC_APM_TRANSACTION_MAX_SPANS=50",
+        "ELASTIC_APM_SAMPLE_RATE=1",
+        "DATABASE_URL=jdbc:postgresql://postgres/opbeans?user=postgres&password=verysecure",
+        "DATABASE_DIALECT=POSTGRESQL",
+        "DATABASE_DRIVER=org.postgresql.Driver",
+        "REDIS_URL=redis://redis:6379",
+        "ELASTICSEARCH_URL=http://elasticsearch:9200",
+        "OPBEANS_SERVER_PORT=3000",
+        "JAVA_AGENT_VERSION",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 36,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://opbeans-java:3000/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:3002:3000"]
+    },
+    "opbeans-load-generator": {
+      "container_name": "localtesting_8.0.0_opbeans-load-generator",
+      "depends_on": {},
+      "environment": ["OPBEANS_URLS=", "OPBEANS_RPMS="],
+      "image": "opbeans/opbeans-loadgen:latest",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      }
+    },
+    "opbeans-node": {
+      "build": {
+        "args": [
+          "OPBEANS_NODE_IMAGE=opbeans/opbeans-node",
+          "OPBEANS_NODE_VERSION=latest"
+        ],
+        "context": "docker/opbeans/node",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_latest_opbeans-node",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_JS_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_LOG_LEVEL=info",
+        "ELASTIC_APM_SOURCE_LINES_ERROR_APP_FRAMES",
+        "ELASTIC_APM_SOURCE_LINES_SPAN_APP_FRAMES=5",
+        "ELASTIC_APM_SOURCE_LINES_ERROR_LIBRARY_FRAMES",
+        "ELASTIC_APM_SOURCE_LINES_SPAN_LIBRARY_FRAMES",
+        "WORKLOAD_ELASTIC_APM_APP_NAME=workload",
+        "WORKLOAD_ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "WORKLOAD_DISABLED=False",
+        "OPBEANS_SERVER_PORT=3000",
+        "OPBEANS_SERVER_HOSTNAME=opbeans-node",
+        "NODE_ENV=production",
+        "PGHOST=postgres",
+        "PGPASSWORD=verysecure",
+        "PGPORT=5432",
+        "PGUSER=postgres",
+        "REDIS_URL=redis://redis:6379",
+        "NODE_AGENT_BRANCH=",
+        "NODE_AGENT_REPO=",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 12,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://opbeans-node:3000/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:3000:3000"],
+      "volumes": ["./docker/opbeans/node/sourcemaps:/sourcemaps"]
+    },
+    "opbeans-python": {
+      "build": {
+        "args": [
+          "OPBEANS_PYTHON_IMAGE=opbeans/opbeans-python",
+          "OPBEANS_PYTHON_VERSION=latest"
+        ],
+        "context": "docker/opbeans/python",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_latest_opbeans-python",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "elasticsearch": {
+          "condition": "service_healthy"
+        },
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "DATABASE_URL=postgres://postgres:verysecure@postgres/opbeans",
+        "ELASTIC_APM_SERVICE_NAME=opbeans-python",
+        "ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_JS_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_FLUSH_INTERVAL=5",
+        "ELASTIC_APM_TRANSACTION_MAX_SPANS=50",
+        "ELASTIC_APM_TRANSACTION_SAMPLE_RATE=0.5",
+        "ELASTIC_APM_SOURCE_LINES_ERROR_APP_FRAMES",
+        "ELASTIC_APM_SOURCE_LINES_SPAN_APP_FRAMES=5",
+        "ELASTIC_APM_SOURCE_LINES_ERROR_LIBRARY_FRAMES",
+        "ELASTIC_APM_SOURCE_LINES_SPAN_LIBRARY_FRAMES",
+        "REDIS_URL=redis://redis:6379",
+        "ELASTICSEARCH_URL=http://elasticsearch:9200",
+        "OPBEANS_SERVER_URL=http://opbeans-python:3000",
+        "PYTHON_AGENT_BRANCH=",
+        "PYTHON_AGENT_REPO=",
+        "PYTHON_AGENT_VERSION",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 12,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://opbeans-python:3000/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:8000:3000"]
+    },
+    "opbeans-ruby": {
+      "build": {
+        "args": [
+          "OPBEANS_RUBY_IMAGE=opbeans/opbeans-ruby",
+          "OPBEANS_RUBY_VERSION=latest"
+        ],
+        "context": "docker/opbeans/ruby",
+        "dockerfile": "Dockerfile"
+      },
+      "container_name": "localtesting_latest_opbeans-ruby",
+      "depends_on": {
+        "apm-server-proxy": {
+          "condition": "service_healthy"
+        },
+        "elasticsearch": {
+          "condition": "service_healthy"
+        },
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "ELASTIC_APM_SERVER_URL=http://apm-server-proxy:8200",
+        "ELASTIC_APM_SERVICE_NAME=opbeans-ruby",
+        "DATABASE_URL=postgres://postgres:verysecure@postgres/opbeans-ruby",
+        "REDIS_URL=redis://redis:6379",
+        "ELASTICSEARCH_URL=http://elasticsearch:9200",
+        "OPBEANS_SERVER_URL=http://opbeans-ruby:3000",
+        "RAILS_ENV=production",
+        "RAILS_LOG_TO_STDOUT=1",
+        "PORT=3000",
+        "RUBY_AGENT_BRANCH=",
+        "RUBY_AGENT_REPO=",
+        "RUBY_AGENT_VERSION",
+        "OPBEANS_DT_PROBABILITY=0.50",
+        "OPBEANS_SERVICES=opbeans-java,opbeans-dotnet,opbeans-python,opbeans-node,opbeans-go,opbeans-ruby"
+      ],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 50,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://opbeans-ruby:3000/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:3001:3000"]
+    },
+    "opbeans-rum": {
+      "build": {
+        "context": "docker/opbeans/rum",
+        "dockerfile": "Dockerfile"
+      },
+      "cap_add": ["SYS_ADMIN"],
+      "container_name": "localtesting_8.0.0_opbeans-rum",
+      "depends_on": {
+        "opbeans-node": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": ["OPBEANS_BASE_URL=http://opbeans-node:3000"],
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 12,
+        "test": [
+          "CMD",
+          "curl",
+          "--write-out",
+          "'HTTP %{http_code}'",
+          "--fail",
+          "--silent",
+          "--output",
+          "/dev/null",
+          "http://localhost:9222/"
+        ]
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["127.0.0.1:9222:9222"]
+    },
+    "postgres": {
+      "container_name": "localtesting_8.0.0_postgres",
+      "environment": ["POSTGRES_DB=opbeans", "POSTGRES_PASSWORD=verysecure"],
+      "healthcheck": {
+        "interval": "10s",
+        "test": ["CMD", "pg_isready", "-h", "postgres", "-U", "postgres"]
+      },
+      "image": "postgres:10",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["5432:5432"],
+      "volumes": [
+        "./docker/opbeans/sql:/docker-entrypoint-initdb.d",
+        "pgdata:/var/lib/postgresql/data"
+      ]
+    },
+    "redis": {
+      "command": "--save ''",
+      "container_name": "localtesting_8.0.0_redis",
+      "healthcheck": {
+        "interval": "10s",
+        "test": ["CMD", "redis-cli", "ping"]
+      },
+      "image": "redis:4",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-file": "5",
+          "max-size": "2m"
+        }
+      },
+      "ports": ["6379:6379"]
+    }
+  },
+  "version": "2.1",
+  "volumes": {
+    "esdata": {
+      "driver": "local"
+    },
+    "pgdata": {
+      "driver": "local"
+    }
+  }
+}

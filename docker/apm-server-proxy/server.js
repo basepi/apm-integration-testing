@@ -14,17 +14,18 @@ app.use(bodyParser.raw({ type: 'application/x-ndjson' }));
 
 // used for health check
 app.get('/', (req, res) => {
-  console.log('Endpoint: /');
   res.status(202).end();
 });
 
 const payloads = [];
-
-app.post('/intake/v2/events', (req, res) => {
-  console.log('Endpoint: /intake/v2/events');
-  const data = req.body.toString();
-  payloads.push(data);
-
+app.post('*', (req, res) => {
+  const payload = {
+    url: req.url,
+    method: req.method,
+    data: req.body.toString()
+  };
+  console.log(payload.url, payload.method);
+  payloads.push(payload);
   res.status(202).end();
 });
 

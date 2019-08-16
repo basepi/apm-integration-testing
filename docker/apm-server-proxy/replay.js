@@ -1,13 +1,15 @@
 const { promisify } = require('util');
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const readFile = promisify(fs.readFile);
 
 const APM_SERVER_HOST = '0.0.0.0';
 const APM_SERVER_PORT = '8200';
+const PATH_TO_FILE = path.resolve(__dirname, './shared-volume/captured-events-small.json')
 
 async function init() {
-  const content = await readFile('./shared-volume/static-events-new.json');
+  const content = await readFile(PATH_TO_FILE);
   const items = JSON.parse(content.toString());
 
   for await (let item of items) {
@@ -25,7 +27,6 @@ async function init() {
       console.log(e.response.data);
     }
   }
-  console.log('end');
 }
 
 init();

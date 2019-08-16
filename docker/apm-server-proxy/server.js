@@ -7,10 +7,11 @@ const writeFile = util.promisify(fs.writeFile);
 const APM_SERVER_PORT =
   parseInt(process.env.ELASTIC_APM_SERVER_PORT, 10) || 8200;
 const APM_SERVER_HOST = process.env.ELASTIC_APM_SERVER_HOST || '0.0.0.0';
+const PATH_TO_FILE = path.resolve(__dirname, './shared-volume/events.json')
 
 // App
 const app = express();
-app.use(bodyParser.raw({ type: 'application/x-ndjson' }));
+app.use(bodyParser.raw({ type: 'application/x-ndjson', limit: '5mb' }));
 
 // used for health check
 app.get('/', (req, res) => {
@@ -33,7 +34,7 @@ setInterval(persistToFile, 10000);
 
 async function persistToFile() {
   console.log(`Persisting ${payloads.length} items`);
-  await writeFile('./shared-volume/events.json', JSON.stringify(payloads));
+  await writeFile(PATH_TO_FILE, JSON.stringify(payloads));
   console.log('Persisted!');
 }
 
